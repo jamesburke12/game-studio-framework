@@ -1,0 +1,161 @@
+# PR checks: per-PR validation on self-hosted runner.
+# Runs on pull_request to main: dotnet build, dotnet test (the engine-free simulation project),
+# routing and comment-budget validators, and the same validator set as tests.yml.
+# Self-hosted labels: [self-hosted, windows, unity]. Cost: 0 billed minutes.
+#
+# TASK #1070: unified PR checks + Unity gate on self-hosted runner.
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'production/**'
+      - 'tasks/**'
+      - 'design/**/*.md'
+      - '**.md'
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SDK_VERSION: "10.0.x"
+
+jobs:
+  checks:
+    name: PR validation
+    runs-on: [self-hosted, windows, unity]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # host toolchain: dotnet 10 and python 3 are installed on the self-hosted runner
+
+      - name: Link the Sim assembly into Assets (junction)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/unity/setup-asmdef-junction.ps1
+      - name: Build the simulation project
+        run: dotnet build ${{ vars.SIM_PROJECT || 'src/Sim' }}
+
+      - name: Test the simulation project
+        run: dotnet test ${{ vars.SIM_TESTS_PROJECT || 'tests/Sim.Tests' }}
+
+
+
+      # --- validators (copied from tests.yml) ---
+
+      - name: Validate agent routing
+        id: routing
+        continue-on-error: true
+        run: python tools/ci/validate-agent-routing.py
+
+      - name: Check comment budget
+        id: comment_budget
+        continue-on-error: true
+        run: python tools/code/comment_budget.py check src/ assets/Scripts/ assets/Tests/
+
+      - name: Validate assembly dependencies
+        id: assembly_deps
+        continue-on-error: true
+        run: python tools/ci/validate-assembly-dependencies.py
+
+      - name: Run story-status validator
+        id: story_status
+        continue-on-error: true
+        run: python tools/ci/validate-story-status.py
+
+      - name: Run validator unit tests
+        id: validator_tests
+        continue-on-error: true
+        run: python assets/Tests/tools/test-validate-story-status.py
+
+      - name: Validate engine references
+        id: engine_refs
+        continue-on-error: true
+        run: python tools/ci/validate-engine-references.py
+
+      - name: Run engine-reference validator unit tests
+        id: engine_ref_tests
+        continue-on-error: true
+        run: python assets/Tests/tools/test-validate-engine-references.py
+
+      - name: Validate TR pair drift
+        id: tr_pair_drift
+        continue-on-error: true
+        run: python tools/ci/validate-tr-pair-drift.py
+
+      - name: Run TR-pair-drift validator unit tests
+        id: tr_pair_drift_tests
+        continue-on-error: true
+        run: python assets/Tests/tools/test-validate-tr-pair-drift.py
+
+      - name: Validate sim purity
+        id: sim_purity
+        continue-on-error: true
+        run: python tools/ci/validate-sim-purity.py
+
+      - name: Validate doc paths
+        continue-on-error: true
+        run: python tools/ci/validate-doc-paths.py
+
+      - name: Validate case sensitivity
+        continue-on-error: true
+        run: python tools/ci/validate-case-sensitivity.py
+
+      - name: Validate decision records
+        continue-on-error: true
+        run: python tools/ci/validate-decision-record.py
+
+      - name: Validate lead-only files
+        continue-on-error: true
+        run: python tools/ci/validate-lead-only-files.py
+
+      - name: Validate sprint plan links
+        continue-on-error: true
+        run: python tools/ci/validate-sprint-plan-links.py
+
+      - name: Check orphan .meta files
+        continue-on-error: true
+        run: python tools/ci/orphan-meta-check.py
+
+      - name: Audit provenance exemptions
+        continue-on-error: true
+        run: python tools/ci/audit-provenance-exemptions.py
+
+      - name: UI screen lint
+        id: ui_lint
+        run: python tools/ci/check_screen_rects.py --max 41
+
+      - name: Validate doc sizes
+        id: doc_sizes
+        run: python tools/ci/validate-doc-sizes.py
+
+      - name: Validate single source of truth
+        id: single_source
+        continue-on-error: true
+        run: python tools/ci/validate-single-source.py --warn
+
+      # --- gate ---
+
+      - name: Gate on blocking validators
+        shell: pwsh
+        run: |
+          $fail = 0
+          if ('${{ steps.routing.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: routing'; $fail = 1 }
+          if ('${{ steps.comment_budget.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: comment-budget'; $fail = 1 }
+          if ('${{ steps.assembly_deps.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: assembly-dependencies'; $fail = 1 }
+          if ('${{ steps.story_status.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: story-status'; $fail = 1 }
+          if ('${{ steps.validator_tests.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: story-status-unit-tests'; $fail = 1 }
+          if ('${{ steps.engine_refs.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: engine-references'; $fail = 1 }
+          if ('${{ steps.engine_ref_tests.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: engine-reference-unit-tests'; $fail = 1 }
+          if ('${{ steps.tr_pair_drift.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: tr-pair-drift'; $fail = 1 }
+          if ('${{ steps.tr_pair_drift_tests.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: tr-pair-drift-unit-tests'; $fail = 1 }
+          if ('${{ steps.sim_purity.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: sim-purity'; $fail = 1 }
+          if ('${{ steps.doc_sizes.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: doc-sizes'; $fail = 1 }
+          if ('${{ steps.single_source.outcome }}' -ne 'success') { Write-Host '::error::blocking validator failed: single-source'; $fail = 1 }
+          exit $fail

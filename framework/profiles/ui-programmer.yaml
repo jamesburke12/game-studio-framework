@@ -1,0 +1,11 @@
+skills:
+  - code-review
+  - dev-story
+  - story-readiness
+  - test-helpers
+  - test-setup
+  - test-flakiness
+  - bug-report
+  - smoke-check
+roles:
+  - ui-programmer

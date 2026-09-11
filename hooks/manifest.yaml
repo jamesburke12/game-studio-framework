@@ -1,0 +1,24 @@
+[
+  {
+    "event": "SessionStart",
+    "script": "echo '## In-progress issues' && gh issue list -l status:in-progress --json number,title --jq '.[] | \"#\\(.number) \\(.title)\"' 2>/dev/null | head -20",
+    "timeout": null,
+    "claude_matcher": null,
+    "codex_matcher": null,
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "event": "PostToolUse",
+    "script": "bash \"$CLAUDE_PROJECT_DIR/hooks/validate-comment-budget.sh\"",
+    "timeout": 20,
+    "claude_matcher": "Edit|Write",
+    "codex_matcher": "apply_patch",
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  }
+]

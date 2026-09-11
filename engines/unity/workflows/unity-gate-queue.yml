@@ -1,0 +1,24 @@
+# Trampoline: turns the gate:queued label (or a push to a gate:fail PR) into a
+# workflow_dispatch of unity-gate.yml, so the gate always runs main's copy of
+# its workflow file. Hosted, seconds per run, no Unity.
+name: Unity Gate Queue
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+    branches: [main]
+
+permissions:
+  actions: write
+  contents: read   # gh workflow run resolves the default branch
+
+jobs:
+  dispatch:
+    if: contains(github.event.pull_request.labels.*.name, 'gate:queued') || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'gate:fail'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch the Unity gate for this PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run unity-gate.yml --repo ${{ github.repository }} --ref main -f pr=${{ github.event.pull_request.number }}

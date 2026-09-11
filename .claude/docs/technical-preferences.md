@@ -1,87 +1,74 @@
 # Technical Preferences
 
-<!-- Populated by /setup-engine. Updated as the user makes decisions throughout development. -->
-<!-- All agents reference this file for project-specific standards and conventions. -->
-
 ## Engine & Language
-
-- **Engine**: [TO BE CONFIGURED — run /setup-engine]
-- **Language**: [TO BE CONFIGURED]
-- **Rendering**: [TO BE CONFIGURED]
-- **Physics**: [TO BE CONFIGURED]
+- **Engine**: Unity 6 (6000.x LTS)
+- **Language**: C# (latest supported by the Unity version)
+- **Rendering**: URP 2D Renderer
+- **Physics**: none in the sim. Unity 2D physics only for incidental presentation.
+- **Pixel pipeline**: Pixel Perfect Camera at PPU 16 — ships **inside URP 17**
+  (`UnityEngine.Rendering.Universal`). **Do not add `com.unity.2d.pixel-perfect`** —
+  obsolete on Unity 6 and it breaks the build (TASK #0378, 2026-08-23)
+- **UI**: `com.unity.ugui` 2.5.0 — UGUI + TextMeshPro on Screen Space–Overlay
+  (ADR-027). TMP ships inside that package; do not add `com.unity.textmeshpro`
 
 ## Input & Platform
-
-<!-- Written by /setup-engine. Read by /ux-design, /ux-review, /test-setup, /team-ui, and /dev-story -->
-<!-- to scope interaction specs, test helpers, and implementation to the correct input methods. -->
-
-- **Target Platforms**: [TO BE CONFIGURED — e.g., PC, Console, Mobile, Web]
-- **Input Methods**: [TO BE CONFIGURED — e.g., Keyboard/Mouse, Gamepad, Touch, Mixed]
-- **Primary Input**: [TO BE CONFIGURED — the dominant input for this game]
-- **Gamepad Support**: [TO BE CONFIGURED — Full / Partial / None]
-- **Touch Support**: [TO BE CONFIGURED — Full / Partial / None]
-- **Platform Notes**: [TO BE CONFIGURED — any platform-specific UX constraints]
+- **Target Platforms**: Android (API 26+), iOS 15+
+- **Input Methods**: Touch only
+- **Primary Input**: Single-thumb touch, portrait
+- **Gamepad Support**: None
+- **Touch Support**: Full
+- **Orientation**: Portrait-primary, live rotation to landscape. See `design/ux/orientation-and-layout.md`.
+- **Platform Notes**: Touch targets ≥44 logical px. Must hold 60fps on a 2021 mid-range Android.
 
 ## Naming Conventions
+- **Classes**: `PascalCase`
+- **Methods**: `PascalCase`
+- **Private fields**: `_camelCase`
+- **Locals / parameters**: `camelCase`
+- **Constants**: `PascalCase` (not SCREAMING_CASE)
+- **Interfaces**: `IPascalCase`
+- **Files**: match the primary type name exactly
+- **Prefabs**: `PascalCase.prefab`
+- **ScriptableObjects**: `SO_PascalCase`
+- **Data JSON**: `kebab-case.json`
+- **Assemblies**: `<Project>.<Area>`
 
-- **Classes**: [TO BE CONFIGURED]
-- **Variables**: [TO BE CONFIGURED]
-- **Signals/Events**: [TO BE CONFIGURED]
-- **Files**: [TO BE CONFIGURED]
-- **Scenes/Prefabs**: [TO BE CONFIGURED]
-- **Constants**: [TO BE CONFIGURED]
+## Assemblies
+| Assembly | Unity refs? | Contains |
+|---|---|---|
+| `<Project>.Sim` | ❌ **never** | All game logic. netstandard2.1. |
+| `<Project>.Data` | minimal | Content schemas, ScriptableObjects, JSON loading |
+| `<Project>.Game` | yes | Views, input, presentation, scene glue |
+| `<Project>.Sim.Tests` | ❌ | NUnit against the sim |
 
 ## Performance Budgets
-
-- **Target Framerate**: [TO BE CONFIGURED]
-- **Frame Budget**: [TO BE CONFIGURED]
-- **Draw Calls**: [TO BE CONFIGURED]
-- **Memory Ceiling**: [TO BE CONFIGURED]
+- **Target Framerate**: 60 fps
+- **Frame Budget**: 16.6 ms
+- **Draw Calls**: ≤120
+- **Memory Ceiling**: 400 MB
+- **APK/IPA size**: ≤150 MB
+- **Total audio**: ≤22 MB
+- **Counterfactual re-run**: <50 ms for 8 candidates on mid-range hardware
 
 ## Testing
-
-- **Framework**: [TO BE CONFIGURED]
-- **Minimum Coverage**: [TO BE CONFIGURED]
-- **Required Tests**: Balance formulas, gameplay systems, networking (if applicable)
+- **Framework**: NUnit via `dotnet test` for `<Project>.Sim`; Unity Test Framework for engine-coupled tests
+- **Minimum Coverage**: 80% on `<Project>.Sim`
+- **Required Tests**: every formula in every GDD §4, synergy evaluation, determinism (same seed → identical beat log), save/resume
 
 ## Forbidden Patterns
+- `using UnityEngine` anywhere in `<Project>.Sim` — **CI failure**
+- Hardcoded gameplay values in C# — all tuning lives in `assets/data/tuning.json`
+- `Random` seeded from wall-clock anywhere
+- `Find`, `FindObjectOfType`, or singletons for gameplay wiring — inject instead
+- Anti-aliasing, bilinear filtering, or non-integer sprite scaling
+- Off-palette pixels in `assets/art/` — **CI failure**
+- Any asset committed without a provenance JSON — **CI failure**
+- Cross-fading between the Field and Ledger registers
 
-<!-- Add patterns that should never appear in this project's codebase -->
-- [None configured yet — add as architectural decisions are made]
-
-## Allowed Libraries / Addons
-
-<!-- Add approved third-party dependencies here -->
-- [None configured yet — add as dependencies are approved]
+## Allowed Libraries
+- Unity Registry packages only, declared in `Packages/manifest.json`
+- No manually dropped `.dll` or `.unitypackage`
+- Any new dependency needs an ADR
 
 ## Architecture Decisions Log
-
-<!-- Quick reference linking to full ADRs in docs/architecture/ -->
-- [No ADRs yet — use /architecture-decision to create one]
-
-## Engine Specialists
-
-<!-- Written by /setup-engine when engine is configured. -->
-<!-- Read by /code-review, /architecture-decision, /architecture-review, and team skills -->
-<!-- to know which specialist to spawn for engine-specific validation. -->
-
-- **Primary**: [TO BE CONFIGURED — run /setup-engine]
-- **Language/Code Specialist**: [TO BE CONFIGURED]
-- **Shader Specialist**: [TO BE CONFIGURED]
-- **UI Specialist**: [TO BE CONFIGURED]
-- **Additional Specialists**: [TO BE CONFIGURED]
-- **Routing Notes**: [TO BE CONFIGURED]
-
-### File Extension Routing
-
-<!-- Skills use this table to select the right specialist per file type. -->
-<!-- If a row says [TO BE CONFIGURED], fall back to Primary for that file type. -->
-
-| File Extension / Type | Specialist to Spawn |
-|-----------------------|---------------------|
-| Game code (primary language) | [TO BE CONFIGURED] |
-| Shader / material files | [TO BE CONFIGURED] |
-| UI / screen files | [TO BE CONFIGURED] |
-| Scene / prefab / level files | [TO BE CONFIGURED] |
-| Native extension / plugin files | [TO BE CONFIGURED] |
-| General architecture review | Primary |
+- [ADR-001](../../docs/architecture/ADR-001-deterministic-sim.md) — Engine-independent deterministic simulation (Accepted)

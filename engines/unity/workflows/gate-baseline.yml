@@ -1,0 +1,80 @@
+# Gate baseline: establish nightly baseline of known failures.
+# Runs daily and uploads gate-baseline artifact for use by unity-gate.yml.
+# Triggered by schedule (daily 02:10 UTC / 03:10 BST) or manually via workflow_dispatch.
+# Serialized via concurrency group 'unity' (one at a time, no cancel-in-progress).
+
+name: Gate Baseline
+
+on:
+  schedule:
+    # 02:10 UTC (03:10 BST during summer, 02:10 GMT during winter)
+    - cron: '10 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: unity
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Unity CLI on the self-hosted runner (repo variable UNITY_CLI, else `unity` on PATH)
+  UNITY_CLI: ${{ vars.UNITY_CLI || 'unity' }}
+  # optional NUnit test filter, e.g. "!(My\.Nightly\.Fixture)"; empty = run everything
+  UNITY_GATE_FILTER: ${{ vars.UNITY_GATE_FILTER || '' }}
+
+jobs:
+  baseline:
+    name: Collect baseline
+    runs-on: [self-hosted, windows, unity]
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout main
+        shell: pwsh
+        run: |
+          $auth = 'credential.helper=!gh auth git-credential'
+          if (-not (Test-Path .git)) { git init . ; git remote add origin https://github.com/${{ github.repository }}.git }
+          git config user.email "gate@self-hosted"; git config user.name "unity-gate"
+          git -c $auth fetch --force --no-tags origin "main:refs/gate/main"
+          git checkout --detach -f refs/gate/main
+          git clean -fd -e Library -e tests-out -e Assets/Scripts/Sim
+          git log -1 --oneline
+
+      - name: Link the Sim assembly into Assets (junction)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/unity/setup-asmdef-junction.ps1
+
+      - name: Run EditMode tests
+        id: editmode
+        shell: pwsh
+        run: |
+          $filterArgs = if ($env:UNITY_GATE_FILTER) { @('--filter', $env:UNITY_GATE_FILTER) } else { @() }
+          & "${{ env.UNITY_CLI }}" test . --mode EditMode @filterArgs --format github --report-format nunit,junit --output tests-out/gate/editmode.xml --timeout 900 --no-banner --non-interactive
+          exit 0
+
+      - name: Run PlayMode tests
+        id: playmode
+        shell: pwsh
+        run: |
+          $filterArgs = if ($env:UNITY_GATE_FILTER) { @('--filter', $env:UNITY_GATE_FILTER) } else { @() }
+          & "${{ env.UNITY_CLI }}" test . --mode PlayMode @filterArgs --format github --report-format nunit,junit --output tests-out/gate/playmode.xml --timeout 900 --no-banner --non-interactive
+          exit 0
+
+      - name: Write baseline from EditMode
+        shell: pwsh
+        run: python tools/ci/gate-compare.py tests-out/gate/editmode.xml --write-baseline tests-out/gate/baseline.json --mode EditMode
+
+      - name: Write baseline from PlayMode
+        shell: pwsh
+        run: python tools/ci/gate-compare.py tests-out/gate/playmode.xml --write-baseline tests-out/gate/baseline.json --mode PlayMode
+
+      - name: Upload gate-baseline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-baseline
+          path: tests-out/gate/baseline.json
+          if-no-files-found: ignore
+          retention-days: 30

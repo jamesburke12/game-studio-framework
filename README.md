@@ -1,3 +1,43 @@
+# Game Studio Framework (vendor-neutral fork)
+
+A fork of [Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) reshaped so that **Claude Code, Codex and Google Antigravity** read the same instructions, skills, rules and hooks, and so that work flows through **GitHub Issues, one worktree per issue, a routing table and a self-hosted engine gate**. Seeded 2026-09-11 from a shipping Unity project; the upstream README follows below for the studio concept and the agent roster.
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `AGENTS.md` | Studio instructions, vendor-neutral. The source of truth. |
+| `CLAUDE.md` | `@AGENTS.md` plus Claude-only notes. |
+| `.agents/skills/` | 73 skills (Agent Skills standard). `.claude/skills` is a junction to it. |
+| `roles/` | Role prompts; `.claude/agents/*.md` are thin stubs importing them. |
+| `framework/rules/` | Generic path-scoped rules → synced to `.claude/rules/` and nested `AGENTS.md`. |
+| `framework/profiles/` | Which roles, skills, rules and hooks a checkout enables (`lead`, per role). |
+| `engines/unity/` | Engine overlay: `AGENTS.md`, rules, the `unity-mobile` profile, gate workflows. |
+| `hooks/` | Hook scripts and `manifest.yaml`, written to `.claude/settings.json` and `.codex/hooks.json`. |
+| `.github/agent-routing.yaml` | Who does what: vendors, models, capacity, `max_turns`, per row. |
+| `tools/framework/` | `install.py` (junctions, profile, `--engine`), `sync.py`, `doctor.py`. |
+| `tools/orca/dispatch.py` | The dispatcher: ready issues → worktrees and briefs; PR reviews; worktree cleanup. |
+| `templates/project-AGENTS.md` | Project header to copy in as the game's `AGENTS.md`. |
+| `docs/vendor-map.md` | Tool-verb equivalences across vendors. |
+
+## Adopt in a game repo
+
+```
+git subtree add --prefix framework https://github.com/jamesburke12/game-studio-framework.git main --squash
+python framework/tools/framework/install.py --reset          # junction .claude/skills -> .agents/skills
+python framework/tools/framework/install.py --engine unity --profile lead
+python framework/tools/framework/doctor.py                   # both vendors see the same thing
+cp framework/templates/project-AGENTS.md AGENTS.md           # fill the placeholders
+```
+
+Set repository variables for the gate (`UNITY_CLI`, `SIM_PROJECT`, `SIM_TESTS_PROJECT`, optional `UNITY_GATE_FILTER`), register a self-hosted runner, and put `lead.email` in `agent-routing.yaml`.
+
+## Vendors
+
+`claude` and `codex` are launched by Orca; `antigravity` (Google's `agy`, serving Gemini and Sonnet) runs as a terminal command. Effort for Antigravity models is part of the model slug. See `docs/vendor-map.md`.
+
+---
+
 <p align="center">
   <h1 align="center">Claude Code Game Studios</h1>
   <p align="center">

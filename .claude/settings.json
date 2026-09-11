@@ -15,7 +15,12 @@
       "Bash(dir *)",
       "Bash(python -m json.tool*)",
       "Bash(python -m pytest*)",
-      "Bash(py -m pytest*)"
+      "Bash(py -m pytest*)",
+      "Bash(python tools/ci/validate-provenance.py *)",
+      "Bash(python tools/validate_assets.py *)",
+      "Bash(python tools/todo/archive_completed.py --check)",
+      "Bash(python tools/todo/archive_completed.py --dry-run)",
+      "Bash(python tools/todo/task_files.py check)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -29,128 +34,28 @@
       "Bash(cat *.env*)",
       "Bash(type *.env*)",
       "Read(**/.env*)"
-    ]
+    ],
+    "defaultMode": "auto"
   },
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/session-start.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/detect-gaps.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/validate-commit.sh",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/validate-push.sh",
-            "timeout": 10
+            "command": "echo '## In-progress issues' && gh issue list -l status:in-progress --json number,title --jq '.[] | \"#\\(.number) \\(.title)\"' 2>/dev/null | head -20"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/validate-assets.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/validate-skill-change.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/notify.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/pre-compact.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/post-compact.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/session-stop.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/log-agent.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/log-agent-stop.sh",
-            "timeout": 5
+            "command": "bash \"$CLAUDE_PROJECT_DIR/hooks/validate-comment-budget.sh\"",
+            "timeout": 20
           }
         ]
       }

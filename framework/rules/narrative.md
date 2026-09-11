@@ -1,0 +1,65 @@
+---
+paths:
+  - "design/narrative/**"
+---
+
+# Narrative Rules
+
+Owning agents: `narrative-director` / `writer`.
+
+## ⚖️ The IP gate — read this before writing a single named thing
+
+**Robin Hood is public domain. Every modern adaptation of him is not.** Read
+`docs/legal/IP-COMPLIANCE.md` before naming any character, place or item, or
+writing any narrative. This is not background reading; it is a gate.
+
+- **Every named character, place, item and story beat must trace to a specific
+  pre-1929 source, or be wholly original to us.** There is no third category.
+  "It's part of the legend" is not a citation — much of what feels like legend
+  was invented by a screenwriter.
+- **Every named entity gets a `pd_source` in `design/registry/entities.yaml`**:
+  either a pre-1929 citation (e.g. `"Gest of Robyn Hode, c.1450"`) or the
+  literal string `original`. A missing or empty `pd_source` fails
+  `/consistency-check`.
+- Can't find a citation in Child, Pyle, Ritson or Scott? Then it is **original**
+  — mark it `original`. Original is always safe; prefer it when unsure. Never
+  mark something public domain on vibes.
+- If a thing is original but suspiciously close to something you half-remember
+  from a film, **rename it**.
+- Check the allow-list and deny-list in `docs/legal/IP-COMPLIANCE.md` §3 and §4
+  before using a name that feels canonical. The deny-list exists because some
+  familiar-sounding names are post-1929 inventions.
+- **`design/registry/entities.yaml` is lead-only.** Report new entities — with
+  their `pd_source` — to the lead for registration. Do not edit the registry
+  directly.
+- Changes to `docs/legal/IP-COMPLIANCE.md` or its allow/deny lists require
+  explicit user approval regardless of task state.
+
+Trademark is a separate risk from copyright and clearing one does not clear the
+other — see `docs/legal/IP-COMPLIANCE.md` §6 before proposing any product-facing
+name.
+
+## Consistency
+
+- Cross-reference all new lore against `design/narrative/lore-bible.md` for
+  contradictions before writing.
+- Every lore entry specifies a canon level: Established / Provisional / Under Review.
+- World rules — what is possible and impossible — are documented explicitly and
+  held consistent.
+- Mysteries have a documented "true answer" even if the player never learns it.
+- Faction motivations, relationships and power structures are internally logical.
+- Facts that cross document boundaries belong in `design/registry/entities.yaml`
+  (via the lead), not restated in each doc.
+
+## Voice and tone
+
+- Tone is **grim satire**. Match `design/narrative/tone-guide.md`; a line that
+  would land in a straight heroic retelling is usually wrong here.
+- Character dialogue matches that character's documented voice profile.
+
+## Text constraints
+
+- No line of dialogue exceeds 120 characters — dialogue box constraint.
+- All narrative text is localisation-ready: no idioms that will not translate,
+  named placeholders for interpolated values, no meaning carried by word order
+  that a translator cannot preserve.

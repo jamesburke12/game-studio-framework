@@ -1,0 +1,113 @@
+---
+paths:
+  - "src/<Project>.Sim/**"
+---
+
+# Simulation Code Rules
+
+Scope: `src/<Project>.Sim/**` — the engine-independent simulation. This assembly
+owns **all** game logic: resolution, synergies, economy, seeded RNG, the beat
+log, persistence contracts. Unity only presents it.
+
+Owning agent: `gameplay-programmer`. Escalate architecture questions to
+`technical-director`.
+
+## Hard boundaries — violating any of these is a defect, not a style choice
+
+- **Zero `UnityEngine` references.** No `using UnityEngine`, no `Mathf`, no
+  `Vector2`, no `Random`, no `Debug.Log`. This is ADR-001 and it is enforced:
+  `dotnet build src/<Project>.Sim` must compile with Unity absent from the
+  machine. If a type you need lives in `UnityEngine`, the code belongs in
+  `assets/Scripts/`, not here.
+- **All gameplay values come from `assets/data/tuning.json`.** A tuning number
+  written into C# is a defect, not a shortcut. Constructor parameters may carry
+  defaults for testability, but the caller supplies the real value from data.
+- **Deterministic by construction.** Same seed → identical beat log, on every
+  platform and every run. No wall-clock seeding, no `DateTime.Now`, no
+  `Guid.NewGuid()`, no dictionary/hash-set iteration order in anything that
+  feeds an outcome, no parallelism inside resolution.
+- **Prefer integer arithmetic where an outcome depends on it.** Floating point
+  diverges under IL2CPP. Where doubles are unavoidable, floor deliberately and
+  say so in the doc comment.
+- **No static mutable state and no singletons.** Inject dependencies through
+  constructors — this is what makes the sim testable without a scene.
+- **The sim never references presentation.** Dependency direction is one-way:
+  `Assets/Scripts/**` → `src/<Project>.Sim/**`, never the reverse. Cross-boundary
+  `assets/Scripts/**` → `src/<Project>.Sim/**`, never the reverse. Cross-boundary
+  needs are expressed as interfaces owned by the sim (`IRng`, `IBeatLog`,
+  `ISaveSerializer`, `IBandPersister`), implemented on the Unity side.
+
+## Documentation and traceability
+
+- Every public type and member carries a `///` doc comment.
+- Every formula cites the ADR section it implements, in the doc comment, using
+  the exact ADR filename's number. Verify the citation resolves before writing
+  it — see `.claude/rules/architecture-docs.md`; the same phantom-ID failure
+  mode applies to ADR numbers cited from code.
+- Any new system needs an ADR in `docs/architecture/` before implementation.
+
+## Observability
+
+This is an auto-battler: the player does not act during resolution, so the
+**beat log is the entire explanation of what happened**. It is not debug
+output — it is a player-facing feature and the Autopsy's only input.
+
+- Every state transition that changes an outcome is written to `IBeatLog`.
+- Every synergy that fires appears in the log with its triggering tags.
+- Nothing that affects an outcome may happen silently.
+
+## Naming
+
+Per `.claude/docs/technical-preferences.md`: `PascalCase` types and methods,
+`_camelCase` private fields, `camelCase` locals and parameters, `PascalCase`
+constants (not SCREAMING_CASE), `IPascalCase` interfaces, filename matches the
+primary type exactly.
+
+## Examples
+
+**Correct** — data-supplied, integer-floored, ADR-cited, deterministic:
+
+```csharp
+/// <summary>
+/// Computes the effective (post-pierce) armour value for a target.
+/// </summary>
+/// <remarks>
+/// ADR-004 §Decision — Armour and Pierce:
+/// <c>effective_armour = armour_class − floor(armour_class × min(pierce, divisor) / divisor)</c>
+/// Uses integer floor to avoid floating-point nondeterminism across platforms (IL2CPP).
+/// </remarks>
+public static int ComputeEffectiveArmour(int armourClass, int pierce, int pierceDivisor)
+{
+    if (armourClass <= 0) return 0;
+    int cappedPierce = SimMath.Min(pierce, pierceDivisor);
+    int reduction = (armourClass * cappedPierce) / pierceDivisor;
+    return SimMath.Max(0, armourClass - reduction);
+}
+```
+
+**Incorrect** — three separate defects:
+
+```csharp
+using UnityEngine;                                  // VIOLATION: ADR-001, CI failure
+
+public static class DamageCalculator
+{
+    private const int PierceDivisor = 10;           // VIOLATION: tuning value hardcoded in C#
+
+    public static int Roll(int attack)
+    {
+        return Mathf.FloorToInt(attack * Random.value);  // VIOLATION: UnityEngine + unseeded RNG
+    }
+}
+```
+
+## Verification
+
+```bash
+dotnet build src/<Project>.Sim          # must succeed with Unity uninstalled
+dotnet test  Assets/Tests/<Project>.Sim.Tests
+grep -rn "UnityEngine" src/<Project>.Sim/   # must return nothing
+```
+
+If a CI pause is in effect, say the checks are unrun rather than claiming they
+passed.

@@ -1,0 +1,43 @@
+# Framework checks: validates the framework itself (generated files current,
+# doctor clean, routing yaml well-formed, doc sizes under cap). Hosted runner,
+# no engine required.
+
+name: Framework Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Framework validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Generated files are current
+        run: python tools/framework/sync.py --check
+
+      - name: Framework doctor
+        run: python tools/framework/doctor.py
+
+      - name: Validate agent routing
+        run: python tools/ci/validate-agent-routing.py
+
+      - name: Validate doc sizes
+        run: python tools/ci/validate-doc-sizes.py

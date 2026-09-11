@@ -1,0 +1,12 @@
+{
+  "_note": "example: an art-generation MCP server; copy to .mcp.json and edit",
+  "mcpServers": {
+    "pixellab": {
+      "type": "http",
+      "url": "https://api.pixellab.ai/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_API_KEY>"
+      }
+    }
+  }
+}

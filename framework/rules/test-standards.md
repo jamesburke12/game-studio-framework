@@ -1,0 +1,121 @@
+---
+paths:
+  - "tests/**"
+---
+
+# Test Standards
+
+Three test assemblies, three runners:
+
+| Directory | Framework | Runner |
+|---|---|---|
+| `assets/Tests/<Project>.Sim.Tests/` | NUnit, no Unity | `dotnet test Assets/Tests/<Project>.Sim.Tests` |
+| `assets/Tests/EditMode/` | Unity Test Framework | Unity batch mode — see below |
+| `assets/Tests/PlayMode/` | Unity Test Framework | Unity batch mode — see below |
+
+Unity-side runs go through the project's documented entry point, quoting the
+editor path because it contains spaces, and always with `-logFile -` (without it
+you get an exit code and no output):
+
+```
+"C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe" ^
+  -batchmode -nographics -quit -projectPath . ^
+  -executeMethod <Project>.Build.CI.RunTests -logFile -
+```
+
+`<Project>.Sim.Tests` must compile and run with Unity absent from the machine —
+the same ADR-001 constraint that binds `src/<Project>.Sim/**`. Engine-coupled
+tests go in `EditMode`/`PlayMode`, never in `<Project>.Sim.Tests`.
+
+Owning agents: `qa-lead` / `qa-tester`.
+
+## Conventions
+
+- **Test naming: `test_[system]_[scenario]_[expected_result]`.** Yes, snake_case
+  method names — this is a deliberate exception to the project's `PascalCase`
+  method convention, applied only to test methods, because the name is read as a
+  sentence in the failure output.
+- Every test has an explicit **Arrange / Act / Assert** structure, marked with
+  comments.
+- Unit tests depend on no external state — no filesystem, no network, no clock.
+- Integration tests clean up after themselves.
+- Test data is defined in the test or in a dedicated fixture under
+  `TestSupport/`. Never shared mutable state between tests.
+- Every bug fix ships with a regression test that would have failed before it.
+- Coverage floor: 80% on `<Project>.Sim`.
+- Required coverage: every formula in every GDD §4, synergy evaluation,
+  determinism (same seed → identical beat log), and save/resume.
+
+## Determinism tests are not optional
+
+The sim's core promise is that the same seed produces the same beat log. Any
+change to resolution, synergy evaluation, RNG or ordering needs a test that
+asserts it, not a manual spot-check.
+
+## Performance tests
+
+- State the budget, cite its source, and fail if exceeded.
+- Mark them `[Category("PerfBudget")]` so they are filtered out of the default
+  run and do not block ordinary checks. Run explicitly:
+  `dotnet test assets/Tests/<Project>.Sim.Tests --filter "FullyQualifiedName~PerfBudget"`
+- Record the hardware caveat. CI is x86_64 and faster than a mid-range Android
+  device, so a pass is necessary but not sufficient evidence the device budget
+  is met.
+- A budget derived on the dev machine may be **record-only on a slower CI
+  runner** (gate on `GITHUB_ACTIONS`, log the measurement, keep the local
+  assertion). Say so in the test and cite the task that made the call — the
+  first case is `M1UIBootPerformanceTests` under TASK #0956 (2026-09-06).
+
+## Examples
+
+**Correct** — descriptive name, explicit Arrange/Act/Assert, precise assertion
+(from `assets/Tests/<Project>.Sim.Tests/SeedTests.cs`):
+
+```csharp
+using <Project>.Sim.Rng;
+using NUnit.Framework;
+
+namespace <Project>.Sim.Tests;
+
+[TestFixture]
+public class SeedTests
+{
+    [Test]
+    public void test_seed_from_string_season_raidIndex_is_deterministic()
+    {
+        // Arrange
+        const string profileId = "PLAYER_001";
+        const int season = 3;
+        const int raidIndex = 7;
+
+        // Act
+        var seed1 = Seed.From(profileId, season, raidIndex);
+        var seed2 = Seed.From(profileId, season, raidIndex);
+
+        // Assert
+        Assert.That(seed1, Is.EqualTo(seed2));
+    }
+}
+```
+
+**Incorrect**:
+
+```csharp
+[Test]
+public void Test1()                                  // VIOLATION: no descriptive name,
+{                                                    //            and wrong casing for a test
+    var seed = Seed.From("P", 1, DateTime.Now.Second);  // VIOLATION: clock-seeded — nondeterministic
+    var rng = new SeededRng(seed);
+    Assert.IsTrue(rng.NextInt(0, 100) >= 0);         // VIOLATION: no arrange step; imprecise assertion
+                                                     //            (this can never fail)
+}
+```
+
+## Verification
+
+```bash
+dotnet test Assets/Tests/<Project>.Sim.Tests
+```
+
+If a CI pause is in effect, say the checks are unrun rather than claiming they
+passed.

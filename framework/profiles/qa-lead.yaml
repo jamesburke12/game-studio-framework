@@ -1,0 +1,11 @@
+skills:
+  - qa-plan
+  - smoke-check
+  - bug-report
+  - bug-triage
+  - test-helpers
+  - test-setup
+  - test-flakiness
+  - regression-suite
+roles:
+  - qa-lead

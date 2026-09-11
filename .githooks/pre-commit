@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Pre-commit: flag tuning numbers hardcoded in C#.
+#
+# CLAUDE.md: "All gameplay values are data. A tuning number hardcoded in C# is a
+# defect, not a shortcut." This catches the obvious cases before they land.
+#
+# WARNS by default — a false positive should never block a commit you need to
+# make. Set CCGS_STRICT=1 (or `git config ccgs.strict true`) to make it blocking
+# once you trust its signal-to-noise.
+set -u
+
+strict="${CCGS_STRICT:-$(git config --get ccgs.strict 2>/dev/null || echo 0)}"
+staged=$(git diff --cached --name-only --diff-filter=ACM -- 'src/*.cs' 2>/dev/null)
+[ -z "$staged" ] && exit 0
+
+# identifier = number, where the identifier contains a gameplay quantity.
+# Leading [A-Za-z_]* so camelCase prefixes (baseDamage, enemyHealth) still match.
+# Deliberately omits max/min/cap/count/size/index — too generic to be signal.
+PATTERN='[A-Za-z_]*(damage|health|armou?r|cooldown|duration|radius|cost|price|weight|heat|decay|chance|threshold|multiplier|scale|tier|yield|upkeep|morale|stealth)[A-Za-z_]*[[:space:]]*[:=][[:space:]]*-?[0-9]+(\.[0-9]+)?[fdm]?'
+
+hits=""
+for f in $staged; do
+  [ -f "$f" ] || continue
+  # skip test fixtures and anything explicitly marked
+  case "$f" in *Tests/*|*test/*|*Test.cs) continue ;; esac
+  found=$(grep -nEIi "$PATTERN" "$f" 2>/dev/null \
+          | grep -viE 'const |readonly |//\s*tuning-ok|\[TuningOk\]|nameof\(' || true)
+  [ -n "$found" ] && hits="${hits}
+--- ${f}
+${found}"
+done
+
+[ -z "$hits" ] && exit 0
+
+echo "Possible hardcoded tuning values in staged C#:" >&2
+echo "$hits" >&2
+echo "" >&2
+echo "Move them to assets/data/*.json, or mark the line '// tuning-ok' if it is genuinely not a tuning knob." >&2
+
+case "$strict" in
+  1|true|yes)
+    echo "Blocking: ccgs.strict is on. Commit with --no-verify to override." >&2
+    exit 1 ;;
+  *)
+    echo "(warning only — set 'git config ccgs.strict true' to make this blocking)" >&2
+    exit 0 ;;
+esac

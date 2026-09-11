@@ -1,54 +1,13 @@
-# Claude Code Game Studios -- Game Studio Agent Architecture
+@AGENTS.md
 
-Indie game development managed through 49 coordinated Claude Code subagents.
-Each agent owns a specific domain, enforcing separation of concerns and quality.
+## Claude-only
 
-## Technology Stack
+Everything binding on this project is in `AGENTS.md`. This file holds only what is specific to Claude Code.
 
-- **Engine**: [CHOOSE: Godot 4 / Unity / Unreal Engine 5]
-- **Language**: [CHOOSE: GDScript / C# / C++ / Blueprint]
-- **Version Control**: Git with trunk-based development
-- **Build System**: [SPECIFY after choosing engine]
-- **Asset Pipeline**: [SPECIFY after choosing engine]
+- **Memory.** Persistent per-agent memory lives under `~/.claude/agent-memory/<agent>/`, indexed by that directory's `MEMORY.md`. Session narrative goes to `production/session-state/`, not memory.
+- **Generated directories.** `.claude/rules` is synced from `framework/rules/` (and `engines/<engine>/rules/`) by `tools/framework/sync.py`, and `.claude/skills` is a junction to `.agents/skills` created by `tools/framework/install.py --reset`. Edit the sources, never the generated copies.
+- **Vendor verbs.** Plan-mode approval gates and the structured question tool are the Claude forms of "ask the user" in `AGENTS.md`; the mapping for every other verb is in `docs/vendor-map.md`.
 
-> **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
-> dedicated sub-specialists. Use the set matching your engine.
+## Compact Instructions
 
-## Project Structure
-
-@.claude/docs/directory-structure.md
-
-## Engine Version Reference
-
-@docs/engine-reference/godot/VERSION.md
-
-## Technical Preferences
-
-@.claude/docs/technical-preferences.md
-
-## Coordination Rules
-
-@.claude/docs/coordination-rules.md
-
-## Collaboration Protocol
-
-**User-driven collaboration, not autonomous execution.**
-Every task follows: **Question -> Options -> Decision -> Draft -> Approval**
-
-- Agents MUST ask "May I write this to [filepath]?" before using Write/Edit tools
-- Agents MUST show drafts or summaries before requesting approval
-- Multi-file changes require explicit approval for the full changeset
-- No commits without user instruction
-
-See `docs/COLLABORATIVE-DESIGN-PRINCIPLE.md` for full protocol and examples.
-
-> **First session?** If the project has no engine configured and no game concept,
-> run `/start` to begin the guided onboarding flow.
-
-## Coding Standards
-
-@.claude/docs/coding-standards.md
-
-## Context Management
-
-@.claude/docs/context-management.md
+When compacting, preserve verbatim: every in-progress issue number and its worker; every `status:blocked-user` issue with its need; the last test totals and log paths; the last commit hash and whether it is pushed; the user's standing rules from this session. Drop tool output, agent transcripts and intermediate test failures already fixed.

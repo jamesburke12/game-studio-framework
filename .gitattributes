@@ -1,0 +1,89 @@
+# Line-ending policy.
+#
+# Without this file every tool that rewrites a file picks its own convention —
+# PowerShell's Set-Content, python's open(), git-bash, the Unity importer — and
+# TODO.md drifts between CRLF and LF from one commit to the next. That shows up
+# as whole-file diffs, spurious merge conflicts, and encoding errors when a tool
+# re-reads what another one wrote.
+#
+# Declaring the policy here fixes it at the repo level, which is more reliable
+# than converting after the fact with dos2unix.
+
+# --- text we edit with tooling: normalise to LF in the repo and on disk -------
+*.md        text eol=lf
+*.markdown  text eol=lf
+*.json      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.txt       text eol=lf
+*.csv       text eol=lf
+*.gpl       text eol=lf
+*.py        text eol=lf
+*.sh        text eol=lf working-tree-encoding=UTF-8
+
+# --- Windows-native scripts must keep CRLF or they misbehave -----------------
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+*.sln       text eol=crlf
+
+# --- C# / Unity ---------------------------------------------------------------
+# ENABLED 2026-08-23 (TASK #0382) for *.asset ONLY, and deliberately without
+# merge=unityyamlmerge.
+#
+# Why this one and not the rest. Unity writes LF; with no attribute git applied
+# core.autocrlf and rewrote ProjectSettings/ProjectAuditorSettings.asset into a
+# whole-file diff with ZERO content change. `git diff --numstat` and
+# `--ignore-all-space --numstat` were both empty — a phantom diff, recurring
+# after every Editor run, and exactly the case CLAUDE.md says to investigate
+# rather than hand-fix. 25 tracked files, so the renormalise is bounded.
+#
+# merge=unityyamlmerge is omitted on purpose for *.asset: the driver merges
+# Unity's YAML object graph, and a ProjectSettings .asset is a flat settings
+# file that a normal text merge handles correctly.
+*.asset     text eol=lf
+
+# ALL ENABLED. The header that used to sit here said "STILL DISABLED" and
+# listed *.unity and *.prefab — that was stale: the lines below were already
+# active, and TASK #0383's closure note inherited the error. Corrected
+# 2026-08-24 (TASK #0390).
+#
+# The unityyamlmerge driver IS now configured — TASK #0390:
+#   git config merge.unityyamlmerge.driver \
+#     '"<Editor>/Data/Tools/UnityYAMLMerge.exe" merge -h -p --force \
+#      --fallback none %O %B %A %A'
+#   git config merge.unityyamlmerge.recursive binary
+#
+# ⚠️ That config lives in .git/config, which is NOT tracked. Every clone and
+# every machine must set it independently. Without it git falls back to a
+# plain text merge on scene files, which silently produces a corrupt scene
+# rather than a conflict. Argument order matters: %O %B %A %A is base, theirs,
+# ours, output — swapping %A and %B inverts the merge.
+#
+# *.prefab currently matches ZERO tracked files (M1.prefab was deleted with
+# TASK #0348). The rule is kept because prefabs will return, not because it
+# does anything today.
+*.cs        text eol=lf
+*.csproj    text eol=lf
+*.unity     text eol=lf merge=unityyamlmerge
+*.prefab    text eol=lf merge=unityyamlmerge
+*.meta      text eol=lf
+
+# --- binary: never diff, never normalise -------------------------------------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.tga       binary
+*.psd       binary
+*.aseprite  binary
+*.ase       binary
+*.wav       binary
+*.mp3       binary
+*.ogg       binary
+*.fbx       binary
+*.blend     binary
+*.ttf       binary
+*.otf       binary
+*.dll       binary
+*.pdf       binary

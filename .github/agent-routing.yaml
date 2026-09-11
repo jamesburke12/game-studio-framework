@@ -1,0 +1,75 @@
+# Who does what. Edit here; nothing else hardcodes a model.
+# Vendors: claude | codex | antigravity. Model ids are passed verbatim to `orca ... --model`
+# (claude, codex) or to `agy --model` (antigravity: Google's Antigravity CLI, which serves
+# Gemini and Sonnet ids; `agy models` lists them). USER 2026-09-11: Gemini joins alongside Sonnet.
+
+unity_cli: 1.0.0-beta.9
+
+capacity:            # concurrent workers per vendor
+  claude: 1
+  codex: 1
+  antigravity: 1
+cooldown:            # set by the dispatcher when a vendor reports a usage limit
+  claude: null       # ISO-8601 UK time, or null
+  codex: null
+  antigravity: null
+
+lead:                # row 1 — the interactive session; never dispatched
+  vendor: claude
+  model: claude-fable-5-1
+  effort: medium
+  email: lead@example.com   # the account whose commits may touch lead-only files
+
+rows:
+  - id: ux
+    max_turns: 25
+    match:
+      roles: [ui-programmer, ux-designer, writer]
+      paths: ["src/UI/**", "design/ux/**", "data/strings/**"]
+    options:                       # preference order
+      - {vendor: codex,  model: gpt-5.6-sol}
+      - {vendor: antigravity, model: gemini-3.1-pro-high}
+      - {vendor: claude, model: claude-sonnet-5, effort: medium}
+      - {vendor: claude, model: claude-opus-4-8, effort: medium}
+
+  - id: code
+    max_turns: 25
+    match:
+      roles: [gameplay-programmer, qa-lead, qa-tester, tools-programmer, economy-designer, systems-designer]
+      paths: ["src/**", "tests/**", "data/**", "tools/**"]
+    options:
+      - {vendor: codex,  model: gpt-5.6-sol}
+      - {vendor: antigravity, model: gemini-3.1-pro-high}
+      - {vendor: claude, model: claude-sonnet-5, effort: medium}
+      - {vendor: claude, model: claude-opus-4-8, effort: medium}
+
+  - id: review
+    max_turns: 30
+    match: {stage: review}
+    options:
+      - {vendor: claude, model: claude-opus-4-8, effort: high}
+      - {vendor: codex,  model: gpt-5.6-sol}
+      - {vendor: antigravity, model: gemini-3.1-pro-high, effort: high}
+
+  - id: unity-triage
+    max_turns: 10
+    match: {stage: unity-triage}
+    options:
+      - {vendor: claude, model: claude-haiku-4-5-20251001, effort: low}
+      - {vendor: codex,  model: luna}
+      - {vendor: antigravity, model: gemini-3.8-flash-high, effort: low}
+
+  - id: art                      # art-generation MCP; set the vendor that has it configured
+    max_turns: 25
+    match:
+      roles: [art-director, technical-artist]
+      paths: ["assets/art/**"]
+    options:
+      - {vendor: codex, model: gpt-5.6-sol}
+
+  - id: lead-only
+    match:
+      paths: ["design/gdd/**", "docs/architecture/**", "docs/legal/**",
+              "production/sprint-status.yaml", "production/sprints/**", "production/epics/**",
+              "design/registry/entities.yaml"]
+    options: []

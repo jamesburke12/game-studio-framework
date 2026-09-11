@@ -1,0 +1,204 @@
+# Unity gate: EditMode + PlayMode tests on self-hosted runner.
+# Runs on workflow_dispatch with a PR number so GitHub always reads this file from main
+# (a pull_request trigger ran a stale refs/pull/N/merge copy, run 34604859782).
+# unity-gate-queue.yml turns the gate:queued label into that dispatch.
+# Serialized via concurrency group 'unity' (one at a time, no cancel-in-progress).
+# Posts commit status (unity/gate) and swaps PR labels (gate:pass / gate:fail).
+#
+# TASK #1070: Unity gate on self-hosted runner, label-triggered.
+
+name: Unity Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to gate (empty = run main)'
+        required: false
+        default: ''
+
+concurrency:
+  group: unity
+  cancel-in-progress: false
+
+permissions:
+  statuses: write
+  pull-requests: write
+  contents: read
+  actions: write
+
+env:
+  # Unity CLI on the self-hosted runner (repo variable UNITY_CLI, else `unity` on PATH)
+  UNITY_CLI: ${{ vars.UNITY_CLI || 'unity' }}
+  # optional NUnit test filter, e.g. "!(My\.Nightly\.Fixture)"; empty = run everything
+  UNITY_GATE_FILTER: ${{ vars.UNITY_GATE_FILTER || '' }}
+  PR: ${{ inputs.pr }}
+
+jobs:
+  gate:
+    name: EditMode + PlayMode
+    runs-on: [self-hosted, windows, unity]
+    timeout-minutes: 40
+
+    steps:
+      # Manual checkout: actions/checkout's auth cleanup shells out to `sh`, which the
+      # self-hosted job PATH lacks, and its clean step would walk the Sim junction.
+      # Manual checkout: actions/checkout's auth cleanup shells out to `sh`, which the
+      # self-hosted job PATH lacks, and its clean step would walk the Sim junction.
+      # GitHub's refs/pull/N/merge is recomputed lazily and was stale after a main push,
+      # so the gate merges main into the PR head itself.
+      - name: Checkout PR head merged with main
+        shell: pwsh
+        run: |
+          # the runner runs as the machine user, whose gh login is the credential source
+          $auth = 'credential.helper=!gh auth git-credential'
+          if (-not (Test-Path .git)) { git init . ; git remote add origin https://github.com/${{ github.repository }}.git }
+          git config user.email "gate@self-hosted"; git config user.name "unity-gate"
+          if ($env:PR) {
+            git -c $auth fetch --force --no-tags origin "refs/pull/$env:PR/head:refs/gate/head" "main:refs/gate/main"
+            git checkout --detach -f refs/gate/head
+            git clean -fd -e Library -e tests-out -e Assets/Scripts/Sim
+            git merge --no-edit refs/gate/main
+            if ($LASTEXITCODE -ne 0) { git merge --abort; Write-Host "::error::PR does not merge cleanly with main"; exit 6 }
+          } else {
+            git -c $auth fetch --force --no-tags origin "${{ github.ref }}:refs/gate/head"
+            git checkout --detach -f refs/gate/head
+            git clean -fd -e Library -e tests-out -e Assets/Scripts/Sim
+          }
+          git log -1 --oneline
+      - name: Link the Sim assembly into Assets (junction)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/unity/setup-asmdef-junction.ps1
+
+      - name: Run EditMode tests
+        id: editmode
+        shell: pwsh
+        run: |
+          # nightly fixtures excluded here run in the hosted nightly workflows
+          $filterArgs = if ($env:UNITY_GATE_FILTER) { @('--filter', $env:UNITY_GATE_FILTER) } else { @() }
+          & "${{ env.UNITY_CLI }}" test . --mode EditMode @filterArgs --format github --report-format nunit,junit --output tests-out/gate/editmode.xml --timeout 900 --no-banner --non-interactive
+          "status=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          exit 0
+
+      - name: Run PlayMode tests
+        id: playmode
+        if: steps.editmode.outputs.status != '6'
+        shell: pwsh
+        run: |
+          # nightly fixtures excluded here run in the hosted nightly workflows
+          $filterArgs = if ($env:UNITY_GATE_FILTER) { @('--filter', $env:UNITY_GATE_FILTER) } else { @() }
+          & "${{ env.UNITY_CLI }}" test . --mode PlayMode @filterArgs --format github --report-format nunit,junit --output tests-out/gate/playmode.xml --timeout 900 --no-banner --non-interactive
+          "status=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          exit 0
+
+      - name: Upload EditMode results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-gate-editmode
+          path: tests-out/gate/editmode.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload PlayMode results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-gate-playmode
+          path: tests-out/gate/playmode.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Download gate-baseline artifact
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $latestRun = gh run list --workflow gate-baseline.yml --status success --limit 1 --json databaseId -q '.[0].databaseId'
+          if ($latestRun) {
+            Remove-Item tests-out/gate/baseline.json -ErrorAction SilentlyContinue  # gh run download will not overwrite
+            gh run download $latestRun --name gate-baseline -D tests-out/gate/
+            if ($LASTEXITCODE -eq 0) { Write-Host "Baseline downloaded" } else { Write-Host "Baseline download failed, will treat all failures as regressions" }
+          } else {
+            Write-Host "No successful baseline run found, will treat all failures as regressions"
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compare EditMode against baseline
+        if: always() && hashFiles('tests-out/gate/editmode.xml') != ''
+        id: compare-editmode
+        shell: pwsh
+        run: |
+          $output = python tools/ci/gate-compare.py tests-out/gate/editmode.xml --baseline tests-out/gate/baseline.json --mode EditMode --out tests-out/gate/editmode-summary.json 2>&1
+          Write-Host $output
+          if (Test-Path tests-out/gate/editmode-summary.json) {
+            $summary = Get-Content tests-out/gate/editmode-summary.json | ConvertFrom-Json
+            "regressions=$($summary.regressions.Count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            "regressions=-1" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Compare PlayMode against baseline
+        if: always() && hashFiles('tests-out/gate/playmode.xml') != ''
+        id: compare-playmode
+        shell: pwsh
+        run: |
+          $output = python tools/ci/gate-compare.py tests-out/gate/playmode.xml --baseline tests-out/gate/baseline.json --mode PlayMode --out tests-out/gate/playmode-summary.json 2>&1
+          Write-Host $output
+          if (Test-Path tests-out/gate/playmode-summary.json) {
+            $summary = Get-Content tests-out/gate/playmode-summary.json | ConvertFrom-Json
+            "regressions=$($summary.regressions.Count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            "regressions=-1" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Post status and update labels
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $em = '${{ steps.editmode.outputs.status }}'; $pm = '${{ steps.playmode.outputs.status }}'
+          $emReg = '${{ steps.compare-editmode.outputs.regressions }}'; $pmReg = '${{ steps.compare-playmode.outputs.regressions }}'
+          $emReg = if ($emReg -and $emReg -ne '') { [int]$emReg } else { -1 }
+          $pmReg = if ($pmReg -and $pmReg -ne '') { [int]$pmReg } else { -1 }
+
+          # Success: both suites passed exit code 0 or 8, and both have 0 regressions
+          if (($em -eq '0' -or $em -eq '8' -or $em -eq '2') -and ($pm -eq '0' -or $pm -eq '8' -or $pm -eq '2') -and $emReg -eq 0 -and $pmReg -eq 0) {
+            $state = 'success'
+            $desc = "EditMode 0 regressions ($((Get-Content tests-out/gate/editmode-summary.json -ErrorAction SilentlyContinue | ConvertFrom-Json).preexisting.Count) pre-existing); PlayMode 0 regressions ($((Get-Content tests-out/gate/playmode-summary.json -ErrorAction SilentlyContinue | ConvertFrom-Json).preexisting.Count) pre-existing)"
+            $pass = $true
+          } else {
+            $pass = $false; $state = 'failure'
+            # Build description based on what failed
+            if ($emReg -gt 0) { $desc = "EditMode $emReg regressions" }
+            elseif ($pmReg -gt 0) { $desc = "PlayMode $pmReg regressions" }
+            elseif ($em -eq '6') { $desc = "EditMode: no verdict, compile/licence/crash/timeout (exit 6)" }
+            elseif ($pm -eq '6') { $desc = "PlayMode: no verdict, compile/licence/crash/timeout (exit 6)" }
+            else { $desc = "Tests failed" }
+          }
+
+          $sha = if ($env:PR) { gh pr view $env:PR --json headRefOid -q .headRefOid } else { '${{ github.sha }}' }
+          gh api "repos/${{ github.repository }}/statuses/$sha" -f state=$state -f description="$desc" -f context=unity/gate | Out-Null
+          if ($env:PR) {
+            $pr = $env:PR
+            if ($pass) { gh pr edit $pr --add-label gate:pass --remove-label gate:queued } else { gh pr edit $pr --add-label gate:fail --remove-label gate:queued }
+          }
+
+      # GitHub keeps at most one pending run per concurrency group and cancels
+      # the older pending one when another arrives, so a third gate:queued PR
+      # silently loses its run. Dispatch the oldest still-queued PR once this
+      # job ends; each run chains the next.
+      - name: Requeue the next gate:queued PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $me = if ($env:PR) { $env:PR } else { '0' }
+          $next = gh pr list --state open --label gate:queued --json number,createdAt --jq "[.[] | select(.number != ($me | tonumber? // 0))] | sort_by(.createdAt) | .[0].number"
+          if ($next) {
+            Write-Host "requeue: PR #$next"
+            gh workflow run unity-gate.yml -f pr=$next
+          } else { Write-Host "requeue: nothing waiting" }
